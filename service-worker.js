@@ -1,28 +1,24 @@
-const CACHE_NAME = "pizarron-pwa-v1";
+const CACHE_NAME = "pizarron-pwa-v2";
 
 const APP_SHELL = [
   "./",
   "./indice.html",
   "./reporte.html",
   "./shared.js",
-  "./manifest.json",
-
-  // CDN (Chart.js + SheetJS)
-  "https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js",
-  "https://cdn.jsdelivr.net/npm/xlsx@0.19.3/dist/xlsx.full.min.js"
+  "./manifest.json"
 ];
 
-// ===== INSTALL =====
+// INSTALL
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(APP_SHELL);
-    })
+    caches.open(CACHE_NAME)
+      .then((cache) => cache.addAll(APP_SHELL))
+      .catch(err => console.error("Cache error:", err))
   );
   self.skipWaiting();
 });
 
-// ===== ACTIVATE =====
+// ACTIVATE
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
@@ -36,31 +32,40 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
-// ===== FETCH =====
+// FETCH
 self.addEventListener("fetch", (event) => {
   const req = event.request;
 
-  // Solo GET
   if (req.method !== "GET") return;
 
-  event.respondWith(
-    caches.match(req).then((cached) => {
-      if (cached) return cached;
-
-      return fetch(req)
+  // HTML → network first
+  if (req.destination === "document") {
+    event.respondWith(
+      fetch(req)
         .then((res) => {
-          // Guardar en cache dinámico
           return caches.open(CACHE_NAME).then((cache) => {
             cache.put(req, res.clone());
             return res;
           });
         })
-        .catch(() => {
-          // Fallback básico
-          if (req.destination === "document") {
-            return caches.match("./indice.html");
-          }
+        .catch(() => caches.match("./indice.html"))
+    );
+    return;
+  }
+
+  // Assets → cache first
+  event.respondWith(
+    caches.match(req).then((cached) => {
+      if (cached) return cached;
+
+      return fetch(req).then((res) => {
+        if (!res || res.status !== 200) return res;
+
+        return caches.open(CACHE_NAME).then((cache) => {
+          cache.put(req, res.clone());
+          return res;
         });
+      });
     })
   );
 });
