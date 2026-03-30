@@ -1,0 +1,867 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Índice – Captura Pizarrón (PWA)</title>
+
+  <script>
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker
+        .register("service-worker.js")
+        .then(() => console.log("✅ Service Worker registrado"))
+        .catch(err => console.error("❌ SW error", err));
+    });
+  }
+</script>
+
+  <!-- SheetJS (Excel import) -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.19.3/dist/xlsx.full.min.js"></script>
+
+  <style>
+    :root{
+      --bg:#0b1220;
+      --surface:#0f1b2d;
+      --card:#111f34;
+      --text:#e8eefc;
+      --muted:#9fb0d0;
+      --line:rgba(255,255,255,.08);
+      --shadow: 0 10px 28px rgba(0,0,0,.35);
+      --shadow2: 0 6px 14px rgba(0,0,0,.25);
+      --radius:14px;
+      --accent:#4ea1ff;
+      --accent2:#7c5cff;
+    }
+
+    *{box-sizing:border-box; -webkit-tap-highlight-color: transparent;}
+    html,body{
+      margin:0; padding:0;
+      font-family:"Segoe UI", system-ui, -apple-system, Arial, sans-serif;
+      background: radial-gradient(1200px 700px at 30% -10%, rgba(78,161,255,.22), transparent 55%),
+                  radial-gradient(900px 600px at 95% 10%, rgba(124,92,255,.18), transparent 55%),
+                  var(--bg);
+      color:var(--text);
+    }
+    .app{max-width:980px;margin:0 auto;}
+    header{
+      position:sticky; top:0; z-index:10;
+      backdrop-filter: blur(10px);
+      background: linear-gradient(180deg, rgba(11,18,32,.88), rgba(11,18,32,.55));
+      border-bottom: 1px solid var(--line);
+      padding-top: env(safe-area-inset-top);
+    }
+    .header-inner{
+      display:flex; align-items:center; justify-content:space-between;
+      gap:10px; padding: 10px 12px;
+      flex-wrap:wrap;
+    }
+    .title{display:flex; flex-direction:column; gap:2px; line-height:1.05;}
+    .title h1{font-size:14px; margin:0;}
+    .title small{font-size:11px; color:var(--muted);}
+
+    .toolbar{display:flex; gap:8px; align-items:center; flex-wrap:wrap; justify-content:flex-end;}
+    select,button,input,textarea{font-family:inherit;}
+    select.compact{
+      height:32px; padding:0 10px; border-radius:10px;
+      background: rgba(255,255,255,.06);
+      color: var(--text);
+      border:1px solid var(--line);
+      outline:none; font-size:12px;
+    }
+    button.primary{
+      height:32px; padding:0 12px; border-radius:10px;
+      border:1px solid rgba(78,161,255,.35);
+      background: linear-gradient(135deg, rgba(78,161,255,.95), rgba(124,92,255,.9));
+      color:#06101f; font-weight:800; font-size:12px;
+      box-shadow: var(--shadow2);
+      cursor:pointer;
+    }
+    button.ghost{
+      height:32px; padding:0 10px; border-radius:10px;
+      border:1px solid var(--line);
+      background: rgba(255,255,255,.04);
+      color: var(--text);
+      font-weight:700; font-size:12px;
+      cursor:pointer;
+    }
+
+    main{padding:12px;}
+    .card{
+      background: linear-gradient(180deg, rgba(17,31,52,.92), rgba(14,26,43,.92));
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow:hidden;
+      margin-bottom:10px;
+    }
+
+    details summary{
+      list-style:none; cursor:pointer; user-select:none;
+      padding:10px 12px;
+      display:flex; justify-content:space-between; align-items:center; gap:10px;
+    }
+    summary::-webkit-details-marker{display:none;}
+    .sum-left{display:flex; flex-direction:column; gap:2px;}
+    .sum-left .h{font-size:13px; font-weight:800;}
+    .sum-left .s{font-size:11px; color:var(--muted);}
+    .badge{
+      font-size:11px; color:var(--muted);
+      padding:4px 8px; border-radius:999px;
+      border:1px solid var(--line);
+      background: rgba(255,255,255,.04);
+      white-space:nowrap;
+    }
+    .chev{
+      width:10px; height:10px;
+      border-right:2px solid rgba(255,255,255,.45);
+      border-bottom:2px solid rgba(255,255,255,.45);
+      transform: rotate(45deg);
+      transition: transform .15s ease;
+      margin-left:8px;
+    }
+    details[open] .chev{transform: rotate(225deg);}
+    .panel{padding:10px 12px 12px; border-top: 1px solid var(--line);}
+    .sub{color:var(--muted); font-size:11px; margin:0 0 8px 0;}
+
+    .depto{
+      margin-top:10px; padding-top:10px;
+      border-top: 1px dashed rgba(255,255,255,.10);
+    }
+    .depto:first-of-type{border-top:none;padding-top:0;margin-top:0;}
+    .depto-title{display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;}
+    .depto-title span{font-size:12px; font-weight:800;}
+
+    .days{display:grid; grid-template-columns:repeat(6, minmax(0,1fr)); gap:6px;}
+    .days5{grid-template-columns:repeat(5, minmax(0,1fr));}
+    .days4{grid-template-columns:repeat(4, minmax(0,1fr));}
+    .daycell{display:flex; flex-direction:column; gap:4px;}
+    .daylabel{font-size:10px; color:var(--muted); letter-spacing:.3px; text-align:center;}
+
+    input.num, textarea.num{
+      height:34px;
+      border-radius:10px;
+      border:1px solid var(--line);
+      background: linear-gradient(180deg, rgba(11,22,39,.95), rgba(10,20,35,.95));
+      color: var(--text);
+      font-size:13px;
+      text-align:center;
+      outline:none;
+      padding:0 8px;
+    }
+    textarea.num{height:70px; padding:8px; text-align:left; resize:vertical;}
+    input.time{
+      height:34px;
+      border-radius:10px;
+      border:1px solid var(--line);
+      background: linear-gradient(180deg, rgba(11,22,39,.95), rgba(10,20,35,.95));
+      color: var(--text);
+      font-size:12px;
+      text-align:center;
+      outline:none;
+      padding:0 6px;
+    }
+
+    .statusbar{
+      display:flex; align-items:center; justify-content:space-between;
+      gap:10px; flex-wrap:wrap;
+      border-top: 1px solid var(--line);
+      padding-top:10px; margin-top:10px;
+    }
+    .pill{
+      font-size:11px;
+      padding:6px 10px;
+      border-radius:999px;
+      border:1px solid var(--line);
+      background: rgba(255,255,255,.04);
+    }
+
+    /* Remove number spinners */
+    input::-webkit-outer-spin-button,
+    input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+    @media (max-width:420px){
+      input.num, input.time{height:32px; font-size:12px;}
+      .days{gap:5px;}
+    }
+  </style>
+</head>
+
+<body>
+<div class="app">
+  <header>
+    <div class="header-inner">
+      <div class="title">
+        <h1>Índice – Captura Pizarrón</h1>
+        <small>Importa Excel / captura rápida · Guarda en sesión · Abre reporte.html</small>
+      </div>
+
+      <div class="toolbar">
+        <select class="compact" id="plantaSelect">
+          <option value="1">Planta 1</option>
+          <option value="2">Planta 2</option>
+          <option value="3">Planta 3</option>
+        </select>
+
+        <input type="file" id="excelInput" accept=".xlsx,.xls" style="display:none" />
+        <button class="ghost" type="button" id="btnImportar">Importar Excel</button>
+
+        <button class="ghost" type="button" id="btnGuardar">Guardar sesión</button>
+        <button class="primary" type="button" id="btnReporte">Abrir reporte</button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+
+    <!-- PRODUCCIÓN -->
+    <div class="card">
+      <details open>
+        <summary>
+          <div class="sum-left">
+            <div class="h">Producción</div>
+            <div class="s">Pares por depto · Lun–Sáb</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span class="badge">4/5/6/7</span><span class="chev"></span>
+          </div>
+        </summary>
+        <div class="panel">
+          <p class="sub">Departamentos: Pespunte(4), Montado(5), Acabado(6), Adorno(7).</p>
+
+          <div class="depto">
+            <div class="depto-title"><span>Pespunte</span><span class="badge">ID 4</span></div>
+            <div class="days" id="prod-4"></div>
+          </div>
+
+          <div class="depto">
+            <div class="depto-title"><span>Montado</span><span class="badge">ID 5</span></div>
+            <div class="days" id="prod-5"></div>
+          </div>
+
+          <div class="depto">
+            <div class="depto-title"><span>Acabado</span><span class="badge">ID 6</span></div>
+            <div class="days" id="prod-6"></div>
+          </div>
+
+          <div class="depto">
+            <div class="depto-title"><span>Adorno</span><span class="badge">ID 7</span></div>
+            <div class="days" id="prod-7"></div>
+          </div>
+        </div>
+      </details>
+    </div>
+
+    <!-- FALTAS -->
+    <div class="card">
+      <details>
+        <summary>
+          <div class="sum-left">
+            <div class="h">Faltas</div>
+            <div class="s">Total por día · Lun–Sáb</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span class="badge">Semanal</span><span class="chev"></span>
+          </div>
+        </summary>
+        <div class="panel">
+          <div class="days" id="faltas"></div>
+        </div>
+      </details>
+    </div>
+
+    <!-- CALIDAD -->
+    <div class="card">
+      <details>
+        <summary>
+          <div class="sum-left">
+            <div class="h">Calidad (Índice)</div>
+            <div class="s">Índice por día (%)</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span class="badge">Semanal</span><span class="chev"></span>
+          </div>
+        </summary>
+        <div class="panel">
+          <div class="days" id="calidad"></div>
+        </div>
+      </details>
+    </div>
+
+    <!-- DEFECTOS -->
+    <div class="card">
+      <details>
+        <summary>
+          <div class="sum-left">
+            <div class="h">Defectos principales</div>
+            <div class="s">1 defecto por depto y día</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span class="badge">Tabla</span><span class="chev"></span>
+          </div>
+        </summary>
+        <div class="panel">
+          <div class="depto">
+            <div class="depto-title"><span>Pespunte</span><span class="badge">ID 4</span></div>
+            <div class="days" id="def-4"></div>
+          </div>
+          <div class="depto">
+            <div class="depto-title"><span>Montado</span><span class="badge">ID 5</span></div>
+            <div class="days" id="def-5"></div>
+          </div>
+          <div class="depto">
+            <div class="depto-title"><span>Acabado</span><span class="badge">ID 6</span></div>
+            <div class="days" id="def-6"></div>
+          </div>
+          <div class="depto">
+            <div class="depto-title"><span>Adorno</span><span class="badge">ID 7</span></div>
+            <div class="days" id="def-7"></div>
+          </div>
+        </div>
+      </details>
+    </div>
+
+    <!-- ARRANQUES -->
+    <div class="card">
+      <details>
+        <summary>
+          <div class="sum-left">
+            <div class="h">Arranques</div>
+            <div class="s">Hora por depto · Lun–Sáb</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span class="badge">HH:mm</span><span class="chev"></span>
+          </div>
+        </summary>
+        <div class="panel">
+          <div class="depto">
+            <div class="depto-title"><span>Pespunte</span><span class="badge">ID 4</span></div>
+            <div class="days" id="arr-4"></div>
+          </div>
+          <div class="depto">
+            <div class="depto-title"><span>Montado</span><span class="badge">ID 5</span></div>
+            <div class="days" id="arr-5"></div>
+          </div>
+          <div class="depto">
+            <div class="depto-title"><span>Acabado</span><span class="badge">ID 6</span></div>
+            <div class="days" id="arr-6"></div>
+          </div>
+          <div class="depto">
+            <div class="depto-title"><span>Adorno</span><span class="badge">ID 7</span></div>
+            <div class="days" id="arr-7"></div>
+          </div>
+        </div>
+      </details>
+    </div>
+
+    <!-- PAROS -->
+    <div class="card">
+      <details>
+        <summary>
+          <div class="sum-left">
+            <div class="h">Paros / Demoras</div>
+            <div class="s">Eventos (Fecha, Pares, Motivo, Origen, Depto)</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span class="badge" id="paroBadge">0</span><span class="chev"></span>
+          </div>
+        </summary>
+        <div class="panel">
+          <div class="days5" style="display:grid; gap:6px; grid-template-columns:repeat(5, minmax(0,1fr));">
+            <div class="daycell"><div class="daylabel">Fecha</div><input class="num" type="date" id="paroFecha"></div>
+            <div class="daycell"><div class="daylabel">Pares</div><input class="num" type="number" inputmode="numeric" id="paroPares"></div>
+            <div class="daycell"><div class="daylabel">Motivo</div><input class="num" type="text" id="paroMotivo" placeholder="Ej. Falla máquina"></div>
+            <div class="daycell"><div class="daylabel">Origen</div><input class="num" type="text" id="paroOrigen" placeholder="Ej. MTTO"></div>
+            <div class="daycell"><div class="daylabel">DeptoId</div><input class="num" type="number" inputmode="numeric" id="paroDepto" placeholder="4/5/6/7"></div>
+          </div>
+
+          <div class="statusbar" style="border-top:none;padding-top:0;margin-top:8px;">
+            <button class="ghost" type="button" id="btnAddParo">Agregar paro</button>
+            <span class="pill">Total pares: <b id="paroTotal">0</b></span>
+          </div>
+
+          <div class="depto">
+            <div id="listaParos" class="sub">Sin paros.</div>
+          </div>
+        </div>
+      </details>
+    </div>
+
+    <!-- INCIDENTES -->
+    <div class="card">
+      <details>
+        <summary>
+          <div class="sum-left">
+            <div class="h">Incidentes (Seguridad)</div>
+            <div class="s">Bitácora (Fecha, Tipo, Causa, Clasificación)</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span class="badge" id="incBadge">0</span><span class="chev"></span>
+          </div>
+        </summary>
+        <div class="panel">
+          <div class="days5" style="display:grid; gap:6px; grid-template-columns:repeat(5, minmax(0,1fr));">
+            <div class="daycell"><div class="daylabel">Fecha</div><input class="num" type="date" id="incFecha"></div>
+            <div class="daycell"><div class="daylabel">Tipo</div><input class="num" type="text" id="incTipo" placeholder="Ej. Caída"></div>
+            <div class="daycell"><div class="daylabel">Causa</div><input class="num" type="text" id="incCausa" placeholder="Ej. Orden y limpieza"></div>
+            <div class="daycell"><div class="daylabel">Clasificación</div><input class="num" type="text" id="incClas" placeholder="Incapacitante/NoIncapacitante"></div>
+            <div class="daycell"><div class="daylabel">Descripción</div><input class="num" type="text" id="incDesc" placeholder="Breve"></div>
+          </div>
+
+          <div class="statusbar" style="border-top:none;padding-top:0;margin-top:8px;">
+            <button class="ghost" type="button" id="btnAddInc">Agregar incidente</button>
+            <span class="pill">Total: <b id="incTotal">0</b></span>
+          </div>
+
+          <div class="depto">
+            <div id="listaIncidentes" class="sub">Sin incidentes.</div>
+          </div>
+        </div>
+      </details>
+    </div>
+
+    <!-- MANTENIMIENTO -->
+    <div class="card">
+      <details>
+        <summary>
+          <div class="sum-left">
+            <div class="h">Mantenimiento</div>
+            <div class="s">Incidencias + Mantto Autónomo (%)</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span class="badge" id="mtBadge">0</span><span class="chev"></span>
+          </div>
+        </summary>
+        <div class="panel">
+
+          <p class="sub">Incidencias (Fecha, Máquina, DeptoId, Solicitud, Status)</p>
+          <div class="days5" style="display:grid; gap:6px; grid-template-columns:repeat(5, minmax(0,1fr));">
+            <div class="daycell"><div class="daylabel">Fecha</div><input class="num" type="date" id="mtFecha"></div>
+            <div class="daycell"><div class="daylabel">Máquina</div><input class="num" type="text" id="mtMaq"></div>
+            <div class="daycell"><div class="daylabel">DeptoId</div><input class="num" type="number" inputmode="numeric" id="mtDepto" placeholder="4/5/6/7"></div>
+            <div class="daycell"><div class="daylabel">Solicitud</div><input class="num" type="text" id="mtSol"></div>
+            <div class="daycell"><div class="daylabel">Status</div><input class="num" type="text" id="mtStatus"></div>
+          </div>
+
+          <div class="statusbar" style="border-top:none;padding-top:0;margin-top:8px;">
+            <button class="ghost" type="button" id="btnAddMt">Agregar incidencia</button>
+            <span class="pill">Total: <b id="mtTotal">0</b></span>
+          </div>
+
+          <div class="depto">
+            <div id="listaMtto" class="sub">Sin incidencias.</div>
+          </div>
+
+          <div class="depto">
+            <div class="depto-title"><span>Mantto Autónomo (%)</span><span class="badge">4/5/6/7</span></div>
+            <div class="days4" style="display:grid; gap:6px; grid-template-columns:repeat(4, minmax(0,1fr));">
+              <div class="daycell"><div class="daylabel">Pespunte(4)</div><input class="num" type="number" inputmode="numeric" id="ma4"></div>
+              <div class="daycell"><div class="daylabel">Montado(5)</div><input class="num" type="number" inputmode="numeric" id="ma5"></div>
+              <div class="daycell"><div class="daylabel">Acabado(6)</div><input class="num" type="number" inputmode="numeric" id="ma6"></div>
+              <div class="daycell"><div class="daylabel">Adorno(7)</div><input class="num" type="number" inputmode="numeric" id="ma7"></div>
+            </div>
+          </div>
+        </div>
+      </details>
+    </div>
+
+    <!-- AVISOS -->
+    <div class="card">
+      <details>
+        <summary>
+          <div class="sum-left">
+            <div class="h">Avisos</div>
+            <div class="s">Lista de avisos</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span class="badge" id="avBadge">0</span><span class="chev"></span>
+          </div>
+        </summary>
+        <div class="panel">
+          <div class="statusbar" style="border-top:none;padding-top:0;margin-top:0;">
+            <input class="num" type="text" id="avTxt" placeholder="Escribe un aviso...">
+            <button class="ghost" type="button" id="btnAddAviso">Agregar</button>
+          </div>
+          <div class="depto">
+            <div id="listaAvisos" class="sub">Sin avisos.</div>
+          </div>
+        </div>
+      </details>
+    </div>
+
+    <!-- ACUERDOS -->
+    <div class="card">
+      <details>
+        <summary>
+          <div class="sum-left">
+            <div class="h">Acuerdos</div>
+            <div class="s">Pendientes / Realizados</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span class="badge" id="acBadge">0</span><span class="chev"></span>
+          </div>
+        </summary>
+        <div class="panel">
+          <div class="days4" style="display:grid; gap:6px; grid-template-columns:repeat(4, minmax(0,1fr));">
+            <div class="daycell"><div class="daylabel">Acuerdo</div><input class="num" type="text" id="acTxt"></div>
+            <div class="daycell"><div class="daylabel">Responsable</div><input class="num" type="text" id="acResp"></div>
+            <div class="daycell"><div class="daylabel">Fecha</div><input class="num" type="date" id="acFecha"></div>
+            <div class="daycell"><div class="daylabel">Realizada</div>
+              <select class="compact" id="acDone">
+                <option value="false">false</option>
+                <option value="true">true</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="statusbar" style="border-top:none;padding-top:0;margin-top:8px;">
+            <button class="ghost" type="button" id="btnAddAcuerdo">Agregar</button>
+            <span class="pill">Pend: <b id="acPend">0</b> · Done: <b id="acOk">0</b></span>
+          </div>
+
+          <div class="depto">
+            <div class="depto-title"><span>Pendientes</span><span class="badge">lista</span></div>
+            <div id="listaAcPend" class="sub">Sin pendientes.</div>
+          </div>
+
+          <div class="depto">
+            <div class="depto-title"><span>Realizados</span><span class="badge">lista</span></div>
+            <div id="listaAcDone" class="sub">Sin realizados.</div>
+          </div>
+        </div>
+      </details>
+    </div>
+
+    <div class="card">
+      <div style="padding:10px 12px;">
+        <div class="statusbar" style="border-top:none;padding-top:0;margin-top:0;">
+          <span class="pill" id="status">Listo ✅</span>
+          <span class="pill">Se guarda en sessionStorage (pizarronData)</span>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script src="shared.js"></script>
+<script>
+  // ---------- Estado ----------
+  let state = Shared.createEmptyState();
+
+  // ---------- UI Builders ----------
+  function buildDayInputs(containerId, getter, setter, type="number", step=null, cls="num") {
+    const cont = document.getElementById(containerId);
+    cont.innerHTML = "";
+    Shared.DAYS.forEach((d, i) => {
+      const cell = document.createElement("div");
+      cell.className = "daycell";
+      cell.innerHTML = `<div class="daylabel">${d}</div>`;
+      const inp = document.createElement("input");
+      inp.className = cls;
+      inp.type = type;
+      if(step !== null) inp.step = step;
+      inp.value = getter(i);
+      inp.onchange = () => setter(i, inp.value);
+      cell.appendChild(inp);
+      cont.appendChild(cell);
+    });
+  }
+
+  function buildDeptDayInputs(prefixId, deptoId, getter, setter, type="number", step=null, cls="num") {
+    const cont = document.getElementById(`${prefixId}-${deptoId}`);
+    cont.innerHTML = "";
+    Shared.DAYS.forEach((d, i) => {
+      const cell = document.createElement("div");
+      cell.className = "daycell";
+      cell.innerHTML = `<div class="daylabel">${d}</div>`;
+      const inp = document.createElement("input");
+      inp.className = cls;
+      inp.type = type;
+      if(step !== null) inp.step = step;
+      inp.value = getter(deptoId, i);
+      inp.onchange = () => setter(deptoId, i, inp.value);
+      cell.appendChild(inp);
+      cont.appendChild(cell);
+    });
+  }
+
+  function refreshAllInputs() {
+    // Planta
+    document.getElementById("plantaSelect").value = String(state.plantaId || 1);
+
+    // Producción (4/5/6/7)
+    [4,5,6,7].forEach(id => {
+      buildDeptDayInputs("prod", id,
+        (d,i)=>state.produccion[d][i] ?? 0,
+        (d,i,v)=> state.produccion[d][i] = Shared.toInt(v),
+        "number", null, "num"
+      );
+    });
+
+    // Faltas
+    buildDayInputs("faltas",
+      (i)=> state.faltas[i] ?? 0,
+      (i,v)=> state.faltas[i] = Shared.toInt(v),
+      "number", null, "num"
+    );
+
+    // Calidad
+    buildDayInputs("calidad",
+      (i)=> state.calidad[i] ?? 0,
+      (i,v)=> state.calidad[i] = Shared.toFloat(v),
+      "number", "0.1", "num"
+    );
+
+    // Defectos
+    [4,5,6,7].forEach(id => {
+      buildDeptDayInputs("def", id,
+        (d,i)=> state.defectos[d][i] ?? "",
+        (d,i,v)=> state.defectos[d][i] = String(v||""),
+        "text", null, "num"
+      );
+    });
+
+    // Arranques
+    [4,5,6,7].forEach(id => {
+      buildDeptDayInputs("arr", id,
+        (d,i)=> state.arranques[d][i] ?? "08:00",
+        (d,i,v)=> state.arranques[d][i] = Shared.toTime(v) || "08:00",
+        "time", null, "time"
+      );
+    });
+
+    // Mantto Autónomo
+    document.getElementById("ma4").value = state.mantto.autonomoPorc[4] ?? 0;
+    document.getElementById("ma5").value = state.mantto.autonomoPorc[5] ?? 0;
+    document.getElementById("ma6").value = state.mantto.autonomoPorc[6] ?? 0;
+    document.getElementById("ma7").value = state.mantto.autonomoPorc[7] ?? 0;
+  }
+
+  // ---------- Lists Render ----------
+  function renderParos() {
+    document.getElementById("paroBadge").textContent = String(state.paros.length);
+    document.getElementById("paroTotal").textContent = String(state.paros.reduce((a,b)=>a+(b.pares||0),0));
+    const cont = document.getElementById("listaParos");
+    if(!state.paros.length){ cont.textContent = "Sin paros."; return; }
+    cont.innerHTML = state.paros.map((p,i)=>`
+      <div class="statusbar" style="border-top:none;padding-top:0;margin-top:0;">
+        <span class="pill">${p.fecha}</span>
+        <span class="pill">${p.pares} pares</span>
+        <span class="pill">${p.motivo}</span>
+        <span class="pill">${p.origen}</span>
+        <span class="pill">Depto ${p.deptoId}</span>
+        <button class="ghost" type="button" onclick="removeParo(${i})">✕</button>
+      </div>
+    `).join("");
+  }
+  window.removeParo = (i)=>{ state.paros.splice(i,1); renderParos(); };
+
+  function renderIncidentes() {
+    document.getElementById("incBadge").textContent = String(state.incidentes.length);
+    document.getElementById("incTotal").textContent = String(state.incidentes.length);
+    const cont = document.getElementById("listaIncidentes");
+    if(!state.incidentes.length){ cont.textContent = "Sin incidentes."; return; }
+    cont.innerHTML = state.incidentes.map((x,i)=>`
+      <div class="statusbar" style="border-top:none;padding-top:0;margin-top:0;">
+        <span class="pill">${x.fecha}</span>
+        <span class="pill">${x.clasificacion}</span>
+        <span class="pill">${x.tipo}</span>
+        <span class="pill">${x.causa}</span>
+        ${x.descripcion?`<span class="pill">${x.descripcion}</span>`:""}
+        <button class="ghost" type="button" onclick="removeInc(${i})">✕</button>
+      </div>
+    `).join("");
+  }
+  window.removeInc = (i)=>{ state.incidentes.splice(i,1); renderIncidentes(); };
+
+  function renderMtto() {
+    document.getElementById("mtBadge").textContent = String(state.mantto.incidencias.length);
+    document.getElementById("mtTotal").textContent = String(state.mantto.incidencias.length);
+    const cont = document.getElementById("listaMtto");
+    if(!state.mantto.incidencias.length){ cont.textContent="Sin incidencias."; return; }
+    cont.innerHTML = state.mantto.incidencias.map((x,i)=>`
+      <div class="statusbar" style="border-top:none;padding-top:0;margin-top:0;">
+        <span class="pill">${x.fecha}</span>
+        <span class="pill">Maq: ${x.maquina}</span>
+        <span class="pill">Depto ${x.deptoId}</span>
+        <span class="pill">Sol: ${x.solicitud}</span>
+        <span class="pill">${x.status}</span>
+        <button class="ghost" type="button" onclick="removeMt(${i})">✕</button>
+      </div>
+    `).join("");
+  }
+  window.removeMt = (i)=>{ state.mantto.incidencias.splice(i,1); renderMtto(); };
+
+  function renderAvisos() {
+    document.getElementById("avBadge").textContent = String(state.avisos.length);
+    const cont = document.getElementById("listaAvisos");
+    if(!state.avisos.length){ cont.textContent="Sin avisos."; return; }
+    cont.innerHTML = state.avisos.map((a,i)=>`
+      <div class="statusbar" style="border-top:none;padding-top:0;margin-top:0;">
+        <span class="pill">${Shared.escapeHtml(a)}</span>
+        <button class="ghost" type="button" onclick="removeAv(${i})">✕</button>
+      </div>
+    `).join("");
+  }
+  window.removeAv = (i)=>{ state.avisos.splice(i,1); renderAvisos(); };
+
+  function renderAcuerdos() {
+    document.getElementById("acBadge").textContent = String(state.acuerdos.length);
+    const pend = state.acuerdos.filter(x=>!x.realizada);
+    const done = state.acuerdos.filter(x=>x.realizada);
+    document.getElementById("acPend").textContent = String(pend.length);
+    document.getElementById("acOk").textContent = String(done.length);
+
+    const contP = document.getElementById("listaAcPend");
+    const contD = document.getElementById("listaAcDone");
+
+    contP.innerHTML = pend.length ? pend.map((x)=> {
+      const i = state.acuerdos.indexOf(x);
+      return `
+        <div class="statusbar" style="border-top:none;padding-top:0;margin-top:0;">
+          <span class="pill">${Shared.escapeHtml(x.acuerdo)}</span>
+          <span class="pill"><b>${Shared.escapeHtml(x.responsable)}</b></span>
+          <span class="pill">${x.fecha}</span>
+          <button class="ghost" type="button" onclick="toggleAc(${i})">Done</button>
+          <button class="ghost" type="button" onclick="removeAc(${i})">✕</button>
+        </div>
+      `;
+    }).join("") : "Sin pendientes.";
+
+    contD.innerHTML = done.length ? done.map((x)=> {
+      const i = state.acuerdos.indexOf(x);
+      return `
+        <div class="statusbar" style="border-top:none;padding-top:0;margin-top:0;opacity:.85;">
+          <span class="pill">${Shared.escapeHtml(x.acuerdo)}</span>
+          <span class="pill">${Shared.escapeHtml(x.responsable)}</span>
+          <span class="pill">${x.fecha}</span>
+          <button class="ghost" type="button" onclick="toggleAc(${i})">Reabrir</button>
+          <button class="ghost" type="button" onclick="removeAc(${i})">✕</button>
+        </div>
+      `;
+    }).join("") : "Sin realizados.";
+  }
+  window.toggleAc = (i)=>{ state.acuerdos[i].realizada = !state.acuerdos[i].realizada; renderAcuerdos(); };
+  window.removeAc = (i)=>{ state.acuerdos.splice(i,1); renderAcuerdos(); };
+
+  function updateStatus(msg){ document.getElementById("status").textContent = msg; }
+
+  // ---------- Events ----------
+  document.getElementById("plantaSelect").addEventListener("change", (e)=>{
+    state.plantaId = Shared.toInt(e.target.value) || 1;
+  });
+
+  document.getElementById("btnImportar").addEventListener("click", ()=>{
+    document.getElementById("excelInput").click();
+  });
+
+  document.getElementById("excelInput").addEventListener("change", async (e)=>{
+    const file = e.target.files[0];
+    if(!file) return;
+    try{
+      state = await Shared.importExcelFileToState(file, state);
+      refreshAllInputs();
+      renderParos(); renderIncidentes(); renderMtto(); renderAvisos(); renderAcuerdos();
+      updateStatus("Excel importado ✅");
+    }catch(err){
+      console.error(err);
+      updateStatus("Error importando Excel ❌");
+      alert("No se pudo importar el Excel. Revisa que sea la plantilla correcta.");
+    }finally{
+      e.target.value = "";
+    }
+  });
+
+  document.getElementById("btnAddParo").addEventListener("click", ()=>{
+    const fecha = document.getElementById("paroFecha").value;
+    const pares = Shared.toInt(document.getElementById("paroPares").value);
+    const motivo = (document.getElementById("paroMotivo").value||"").trim();
+    const origen = (document.getElementById("paroOrigen").value||"").trim();
+    const deptoId = Shared.toInt(document.getElementById("paroDepto").value);
+    if(!fecha || !pares || !motivo || !origen || !deptoId){ alert("Completa todo el paro."); return; }
+    state.paros.push({fecha, pares, motivo, origen, deptoId});
+    document.getElementById("paroPares").value="";
+    renderParos();
+  });
+
+  document.getElementById("btnAddInc").addEventListener("click", ()=>{
+    const fecha = document.getElementById("incFecha").value;
+    const tipo = (document.getElementById("incTipo").value||"").trim();
+    const causa = (document.getElementById("incCausa").value||"").trim();
+    const clasificacion = (document.getElementById("incClas").value||"").trim();
+    const descripcion = (document.getElementById("incDesc").value||"").trim();
+    if(!fecha || !tipo || !causa || !clasificacion){ alert("Completa Fecha/Tipo/Causa/Clasificación."); return; }
+    state.incidentes.push({fecha, tipo, causa, clasificacion, descripcion});
+    document.getElementById("incTipo").value="";
+    document.getElementById("incCausa").value="";
+    document.getElementById("incDesc").value="";
+    renderIncidentes();
+  });
+
+  document.getElementById("btnAddMt").addEventListener("click", ()=>{
+    const fecha = document.getElementById("mtFecha").value;
+    const maquina = (document.getElementById("mtMaq").value||"").trim();
+    const deptoId = Shared.toInt(document.getElementById("mtDepto").value);
+    const solicitud = (document.getElementById("mtSol").value||"").trim();
+    const status = (document.getElementById("mtStatus").value||"").trim();
+    if(!fecha || !maquina || !deptoId || !solicitud || !status){ alert("Completa incidencia."); return; }
+    state.mantto.incidencias.push({fecha, maquina, deptoId, solicitud, status});
+    document.getElementById("mtMaq").value="";
+    document.getElementById("mtSol").value="";
+    document.getElementById("mtStatus").value="";
+    renderMtto();
+  });
+
+  document.getElementById("ma4").addEventListener("change", e=> state.mantto.autonomoPorc[4]=Shared.toInt(e.target.value));
+  document.getElementById("ma5").addEventListener("change", e=> state.mantto.autonomoPorc[5]=Shared.toInt(e.target.value));
+  document.getElementById("ma6").addEventListener("change", e=> state.mantto.autonomoPorc[6]=Shared.toInt(e.target.value));
+  document.getElementById("ma7").addEventListener("change", e=> state.mantto.autonomoPorc[7]=Shared.toInt(e.target.value));
+
+  document.getElementById("btnAddAviso").addEventListener("click", ()=>{
+    const t = (document.getElementById("avTxt").value||"").trim();
+    if(!t) return;
+    state.avisos.push(t);
+    document.getElementById("avTxt").value="";
+    renderAvisos();
+  });
+
+  document.getElementById("btnAddAcuerdo").addEventListener("click", ()=>{
+    const acuerdo = (document.getElementById("acTxt").value||"").trim();
+    const responsable = (document.getElementById("acResp").value||"").trim();
+    const fecha = document.getElementById("acFecha").value;
+    const realizada = document.getElementById("acDone").value === "true";
+    if(!acuerdo || !responsable || !fecha){ alert("Completa acuerdo/responsable/fecha."); return; }
+    state.acuerdos.push({acuerdo, responsable, fecha, realizada});
+    document.getElementById("acTxt").value="";
+    document.getElementById("acResp").value="";
+    renderAcuerdos();
+  });
+
+  document.getElementById("btnGuardar").addEventListener("click", ()=>{
+    Shared.saveStateToSession(state);
+    updateStatus("Sesión guardada ✅");
+  });
+
+  document.getElementById("btnReporte").addEventListener("click", ()=>{
+    // Asegura valores actuales mantto autónomo
+    state.mantto.autonomoPorc[4] = Shared.toInt(document.getElementById("ma4").value);
+    state.mantto.autonomoPorc[5] = Shared.toInt(document.getElementById("ma5").value);
+    state.mantto.autonomoPorc[6] = Shared.toInt(document.getElementById("ma6").value);
+    state.mantto.autonomoPorc[7] = Shared.toInt(document.getElementById("ma7").value);
+
+    Shared.saveStateToSession(state);
+    window.open("reporte.html","_blank");
+  });
+
+  // ---------- Init ----------
+  const saved = Shared.loadStateFromSession();
+  if(saved){
+    state = saved;
+    updateStatus("Sesión cargada ✅");
+  }
+  refreshAllInputs();
+  renderParos(); renderIncidentes(); renderMtto(); renderAvisos(); renderAcuerdos();
+</script>
+</body>
+</html>

@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Reporte Pizarrón</title>
+
+  <!-- Chart.js (para gráfica) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+  <style>
+    @page { size: A4 portrait; margin: 8mm; }
+    body{ font-family: "Segoe UI", Arial, sans-serif; margin: 0; color:#263238; }
+    .wrap{ padding: 14px 16px; }
+
+    .header{
+      display:flex; justify-content:space-between; align-items:flex-end;
+      border-bottom: 4px solid #263238;
+      padding-bottom: 10px;
+      margin-bottom: 14px;
+    }
+    .header h1{ margin:0; font-size: 20px; letter-spacing:.3px; }
+    .meta{ text-align:right; font-size: 12px; color:#455a64; line-height: 1.4; }
+
+    .box-title{
+      background:#263238;
+      color:#fff;
+      padding:7px 10px;
+      font-weight:800;
+      margin: 12px 0 8px 0;
+      border-left: 7px solid #4ea1ff;
+      letter-spacing:.4px;
+    }
+
+    table{ width:100%; border-collapse:collapse; font-size:12px; }
+    th{ background:#34495e; color:#fff; padding:6px; text-align:center; }
+    td{ border:1px solid #dfe6ea; padding:6px; text-align:center; color:#37474f; }
+    tr:nth-child(even){ background:#f7f9fb; }
+
+    .kpis{ display:flex; gap:10px; margin: 10px 0 12px; }
+    .kpi{
+      flex:1; border-radius: 12px; padding:10px;
+      color:#fff; text-align:center;
+      box-shadow: 0 4px 12px rgba(0,0,0,.15);
+    }
+    .kpi .n{ font-size: 18px; font-weight:900; }
+    .kpi .l{ font-size: 11px; opacity:.92; }
+    .kpi.blue{ background: linear-gradient(135deg,#1b4b91,#4ea1ff); }
+    .kpi.green{ background: linear-gradient(135deg,#0f6b3a,#22c55e); }
+    .kpi.orange{ background: linear-gradient(135deg,#c85c00,#ffb020); }
+    .kpi.red{ background: linear-gradient(135deg,#9f1c1c,#ef4444); }
+
+    /* Cruz */
+    .cruz-wrap{ display:flex; gap:16px; align-items:flex-start; flex-wrap:wrap; }
+    .cruz{
+      border-collapse:collapse;
+      margin: 0 auto;
+    }
+    .cruz td{
+      width: 34px; height: 34px;
+      border: 1px solid #000;
+      font-weight:800;
+      font-size: 11px;
+      vertical-align: bottom;
+      text-align: right;
+      padding: 3px;
+      color:#000;
+    }
+    .legend{ width:auto; }
+    .legend td{ border:none; text-align:left; padding: 4px 6px; }
+    .swatch{ width: 16px; height: 16px; display:inline-block; border:1px solid #000; margin-right:6px; vertical-align:middle; }
+
+    @media print{
+      .no-print{ display:none !important; }
+      canvas{ max-height: 280px !important; }
+    }
+  </style>
+</head>
+
+<body>
+<div class="wrap">
+  <div class="no-print" style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:8px;">
+    <button onclick="window.print()" style="padding:6px 10px;">Imprimir</button>
+  </div>
+
+  <div id="app"></div>
+</div>
+
+<script src="shared.js"></script>
+<script>
+  const state = Shared.loadStateFromSession();
+  const app = document.getElementById("app");
+
+  if(!state){
+    app.innerHTML = "<h3>No hay datos. Abre primero indice.html y guarda sesión.</h3>";
+    throw new Error("Sin datos en sesión");
+  }
+
+  // Meta de planta (igual al pizarrón clásico)
+  function metaPorPlanta(plantaId){
+    if(plantaId === 1) return 4000;
+    if(plantaId === 2) return 1500;
+    if(plantaId === 3) return 2000;
+    return 0;
+  }
+
+  function sum(a){ return a.reduce((x,y)=>x+(+y||0),0); }
+
+  function renderHeader(){
+    const meta = metaPorPlanta(state.plantaId);
+    const total = Shared.DEPTOS_IDS.reduce((acc,id)=> acc + sum(state.produccion[id]||[0,0,0,0,0,0]), 0);
+    const cumplimiento = meta>0 ? ((total/meta)*100) : 0;
+
+    return `
+      <div class="header">
+        <div>
+          <h1>REPORTE DE DESEMPEÑO OPERATIVO</h1>
+          <div style="font-size:12px;color:#546e7a;margin-top:4px;">
+            Pizarrón – Planta ${state.plantaId}
+          </div>
+        </div>
+        <div class="meta">
+          <div><b>Fecha emisión:</b> ${new Date().toLocaleDateString("es-MX")}</div>
+          <div><b>Meta planta:</b> ${meta.toLocaleString()}</div>
+        </div>
+      </div>
+
+      <div class="kpis">
+        <div class="kpi blue"><div class="n">${cumplimiento.toFixed(0)}%</div><div class="l">Cumplimiento Producción</div></div>
+        <div class="kpi red"><div class="n">${state.incidentes.length}</div><div class="l">Incidentes</div></div>
+        <div class="kpi orange"><div class="n">${state.paros.reduce((a,b)=>a+(b.pares||0),0)}</div><div class="l">Pares Perdidos (Paros)</div></div>
+        <div class="kpi green"><div class="n">${state.faltas.reduce((a,b)=>a+(b||0),0)}</div><div class="l">Faltas Semana</div></div>
+      </div>
+    `;
+  }
+
+  function renderProduccion(){
+    const dias = Shared.DAYS;
+    const deptos = Shared.DEPTOS;
+
+    // totales
+    const totalDia = [0,0,0,0,0,0];
+    const filas = Shared.DEPTOS_IDS.map(id=>{
+      const arr = state.produccion[id] || [0,0,0,0,0,0];
+      arr.forEach((v,i)=> totalDia[i] += (+v||0));
+      return { id, nombre: deptos[id], arr, total: sum(arr) };
+    });
+    const totalSemana = sum(totalDia);
+
+    // tabla
+    let html = `<div class="box-title">PRODUCCIÓN</div>
+      <h3 style="margin:6px 0 8px;">Pares producidos</h3>
+      <table>
+        <tr>
+          <th style="text-align:left">Depto</th>
+          ${dias.map(d=>`<th>${d}</th>`).join("")}
+          <th>Total</th>
+        </tr>
+        ${filas.map(f=>`
+          <tr>
+            <td style="text-align:left"><b>${f.nombre}</b></td>
+            ${f.arr.map(v=>`<td>${(+v||0) ? (+v||0).toLocaleString() : ""}</td>`).join("")}
+            <td><b>${f.total.toLocaleString()}</b></td>
+          </tr>
+        `).join("")}
+        <tr style="background:#eef3f6;font-weight:800">
+          <td style="text-align:left"><b>Total día</b></td>
+          ${totalDia.map(v=>`<td><b>${v ? v.toLocaleString() : ""}</b></td>`).join("")}
+          <td><b>${totalSemana.toLocaleString()}</b></td>
+        </tr>
+      </table>
+
+      <div style="height:14px"></div>
+      <div style="border:1px solid #dfe6ea; padding:10px; border-radius:10px;">
+        <canvas id="prodChart" height="150"></canvas>
+      </div>
+    `;
+
+    return html;
+  }
+
+  function buildProdChart(){
+    const ctx = document.getElementById("prodChart");
+    if(!ctx || !window.Chart) return;
+
+    const labels = Shared.DEPTOS_IDS.map(id => Shared.DEPTOS[id]);
+    const dias = Shared.DAYS;
+
+    // datasets por día (similar al pizarrón original: series = días, categorías = deptos)
+    const colors = ["#1d4ed8","#0f766e","#f59e0b","#7c3aed","#dc2626","#475569"];
+    const datasets = dias.map((dia, di)=>({
+      label: dia,
+      data: Shared.DEPTOS_IDS.map(id => (+((state.produccion[id]||[])[di]) || 0)),
+      backgroundColor: colors[di]
+    }));
+
+    new Chart(ctx, {
+      type: "bar",
+      data: { labels, datasets },
+      options: {
+        responsive:true,
+        plugins:{ legend:{ position:"bottom" } },
+        scales:{ y:{ beginAtZero:true } }
+      }
+    });
+  }
+
+  function renderCruzSeguridad(){
+    // Cruz basada en el ejemplo (rojo=incap, amarillo=no incap, verde=sin) [2](https://caborcaboots-my.sharepoint.com/personal/hperez_caborca_com_mx/Documents/Archivos%20de%20Microsoft%c2%a0Copilot%20Chat/cruz.html?web=1)
+    const now = new Date();
+    const hoy = now.getDate();
+    const y = now.getFullYear();
+    const m = now.getMonth();
+    const diasMes = new Date(y, m+1, 0).getDate();
+
+    // prioridad: rojo > amarillo
+    const incPorDia = {};
+    (state.incidentes||[]).forEach(i=>{
+      const d = new Date(i.fecha);
+      if(d.getFullYear()===y && d.getMonth()===m){
+        const day = d.getDate();
+        const clas = (i.clasificacion||"").trim();
+        if(!incPorDia[day] || clas === "Incapacitante"){
+          incPorDia[day] = clas;
+        }
+      }
+    });
+
+    let t = `<div class="box-title">SEGURIDAD</div>
+      <h3 style="margin:6px 0 8px;">Cruz de Seguridad</h3>
+      <div class="cruz-wrap">
+        <table class="cruz">`;
+
+    let day = 1;
+    for(let r=0;r<5;r++){
+      t += "<tr>";
+      for(let c=0;c<7;c++){
+        if(day>diasMes){
+          t += `<td></td>`;
+        }else{
+          let bg="white", color="#000";
+          if(incPorDia[day]){
+            if(incPorDia[day]==="Incapacitante"){ bg="#f21f10"; color="#fff"; }
+            else { bg="#e3cc21"; color="#000"; }
+          }else if(day<=hoy){
+            bg="#14A44D"; color="#fff";
+          }
+          t += `<td style="background:${bg};color:${color}">${day}</td>`;
+          day++;
+        }
+      }
+      t += "</tr>";
+    }
+    t += `</table>
+
+      <table class="legend">
+        <tr><td><span class="swatch" style="background:#14A44D"></span></td><td>Días sin accidentes</td></tr>
+        <tr><td><span class="swatch" style="background:#e3cc21"></span></td><td>Accidente no incapacitante</td></tr>
+        <tr><td><span class="swatch" style="background:#f21f10"></span></td><td>Accidente incapacitante</td></tr>
+      </table>
+      </div>
+    `;
+
+    return t;
+  }
+
+  function renderCalidad(){
+  const dias = Shared.DAYS;
+  const vals = state.calidad.map(v => +v || 0);
+  const promedio = vals.length ? (vals.reduce((a,b)=>a+b,0) / vals.length) : 0;
+
+  let color = "#ef4444"; // rojo
+  if (promedio >= 95) color = "#22c55e";        // verde
+  else if (promedio >= 80) color = "#f59e0b";   // amarillo
+
+  return `
+    <div class="box-title">CALIDAD</div>
+    <h3 style="margin:6px 0 8px;">Índice de calidad (%)</h3>
+
+    <table>
+      <tr>
+        ${dias.map(d=>`<th>${d}</th>`).join("")}
+        <th>Prom</th>
+      </tr>
+      <tr>
+        ${vals.map(v=>`<td>${v ? v.toFixed(1) : ""}</td>`).join("")}
+        <td style="font-weight:900;background:${color};color:#fff">
+          ${promedio.toFixed(1)}%
+        </td>
+      </tr>
+    </table>
+
+    <div style="margin-top:8px;font-size:11px;color:#455a64">
+      <b>Semáforo:</b>
+      Verde ≥ 95% · Amarillo ≥ 80% · Rojo &lt; 80%
+    </div>
+  `;
+}
+
+function renderDefectos(){
+  const dias = Shared.DAYS;
+  const deptos = Shared.DEPTOS;
+  const ids = Shared.DEPTOS_IDS;
+
+  return `
+    <div class="box-title">DEFECTOS</div>
+    <h3 style="margin:6px 0 8px;">Principales defectos por departamento</h3>
+
+    <table>
+      <tr>
+        <th style="text-align:left">Departamento</th>
+        ${dias.map(d=>`<th>${d}</th>`).join("")}
+      </tr>
+
+      ${ids.map(id=>{
+        const arr = state.defectos[id] || ["","","","","",""];
+        return `
+          <tr>
+            <td style="text-align:left"><b>${deptos[id]}</b></td>
+            ${arr.map(v=>`<td style="font-size:11px">${v || ""}</td>`).join("")}
+          </tr>
+        `;
+      }).join("")}
+    </table>
+  `;
+}
+
+function parseHHMM(hhmm){
+  if(!hhmm) return null;
+  const s = String(hhmm).trim();
+  const m = /^(\d{1,2}):(\d{2})$/.exec(s);
+  if(!m) return null;
+  const h = +m[1], min = +m[2];
+  if(h<0 || h>23 || min<0 || min>59) return null;
+  return h*60 + min;
+}
+
+function minutesLate(hhmm, baseMin=480){ // 08:00 = 480 min [1](https://caborcaboots-my.sharepoint.com/personal/hperez_caborca_com_mx/Documents/Archivos%20de%20Microsoft%c2%a0Copilot%20Chat/cruz.html?web=1)
+  const t = parseHHMM(hhmm);
+  if(t === null) return 0;
+  return Math.max(0, t - baseMin);
+}
+
+function renderArranques(){
+  const dias = Shared.DAYS;
+  const deptos = Shared.DEPTOS;
+  const ids = Shared.DEPTOS_IDS;
+
+  const baseMin = 8*60; // 08:00 [1](https://caborcaboots-my.sharepoint.com/personal/hperez_caborca_com_mx/Documents/Archivos%20de%20Microsoft%c2%a0Copilot%20Chat/cruz.html?web=1)
+
+  // totales por depto y por día (minutos tarde)
+  const lateByDepto = {};
+  const lateByDay = [0,0,0,0,0,0];
+  let aTiempo = 0, tarde = 0;
+
+  ids.forEach(id=>{
+    const arr = state.arranques?.[id] || ["08:00","08:00","08:00","08:00","08:00","08:00"];
+    lateByDepto[id] = 0;
+    arr.forEach((hhmm, i)=>{
+      const late = minutesLate(hhmm, baseMin);
+      lateByDepto[id] += late;
+      lateByDay[i] += late;
+      if(late>0) tarde++; else aTiempo++;
+    });
+  });
+
+  const totalLate = lateByDay.reduce((a,b)=>a+b,0);
+
+  // tabla de horarios por depto/día
+  let html = `
+    <div class="box-title">INGENIERÍA</div>
+    <h3 style="margin:6px 0 8px;">Arranque de Producción</h3>
+
+    <div class="kpis">
+      <div class="kpi green"><div class="n">${aTiempo}</div><div class="l">A tiempo (≤ 08:00)</div></div>
+      <div class="kpi red"><div class="n">${tarde}</div><div class="l">Tarde (&gt; 08:00)</div></div>
+      <div class="kpi orange"><div class="n">${totalLate}</div><div class="l">Minutos tarde (total)</div></div>
+      <div class="kpi blue"><div class="n">08:00</div><div class="l">Hora base</div></div>
+    </div>
+
+    <table>
+      <tr>
+        <th style="text-align:left">Depto</th>
+        ${dias.map(d=>`<th>${d}</th>`).join("")}
+      </tr>
+      ${ids.map(id=>{
+        const arr = state.arranques?.[id] || ["08:00","08:00","08:00","08:00","08:00","08:00"];
+        return `
+          <tr>
+            <td style="text-align:left"><b>${deptos[id]}</b></td>
+            ${arr.map(v=>`<td>${v || ""}</td>`).join("")}
+          </tr>
+        `;
+      }).join("")}
+    </table>
+
+    <div style="height:14px"></div>
+
+    <h3 style="margin:6px 0 8px;">Tiempo muerto (minutos tarde)</h3>
+    <table>
+      <tr>
+        <th style="text-align:left">Departamento</th>
+        <th>Minutos tarde</th>
+      </tr>
+      ${ids.map(id=>`
+        <tr>
+          <td style="text-align:left"><b>${deptos[id]}</b></td>
+          <td>${lateByDepto[id]}</td>
+        </tr>
+      `).join("")}
+    </table>
+
+    <div style="height:14px"></div>
+    <div style="border:1px solid #dfe6ea; padding:10px; border-radius:10px;">
+      <canvas id="arrChartDepto" height="130"></canvas>
+    </div>
+
+    <div style="height:12px"></div>
+    <div style="border:1px solid #dfe6ea; padding:10px; border-radius:10px;">
+      <canvas id="arrChartDia" height="130"></canvas>
+    </div>
+  `;
+
+  return html;
+}
+
+function buildArranqueCharts(){
+  if(!window.Chart) return;
+
+  const ids = Shared.DEPTOS_IDS;
+  const labelsDepto = ids.map(id=>Shared.DEPTOS[id]);
+  const baseMin = 8*60;
+
+  const lateByDepto = ids.map(id=>{
+    const arr = state.arranques?.[id] || ["08:00","08:00","08:00","08:00","08:00","08:00"];
+    return arr.reduce((acc,hhmm)=> acc + minutesLate(hhmm, baseMin), 0);
+  });
+
+  const lateByDay = Shared.DAYS.map((_,i)=>{
+    return ids.reduce((acc,id)=>{
+      const hhmm = (state.arranques?.[id] || [])[i] || "08:00";
+      return acc + minutesLate(hhmm, baseMin);
+    },0);
+  });
+
+  const c1 = document.getElementById("arrChartDepto");
+  if(c1){
+    new Chart(c1, {
+      type:"bar",
+      data:{
+        labels: labelsDepto,
+        datasets:[{
+          label:"Minutos tarde",
+          data: lateByDepto,
+          backgroundColor:"#f59e0b"
+        }]
+      },
+      options:{
+        responsive:true,
+        plugins:{ legend:{ position:"bottom" }},
+        scales:{ y:{ beginAtZero:true } }
+      }
+    });
+  }
+
+  const c2 = document.getElementById("arrChartDia");
+  if(c2){
+    new Chart(c2, {
+      type:"bar",
+      data:{
+        labels: Shared.DAYS,
+        datasets:[{
+          label:"Minutos tarde por día",
+          data: lateByDay,
+          backgroundColor:"#dc2626"
+        }]
+      },
+      options:{
+        responsive:true,
+        plugins:{ legend:{ position:"bottom" }},
+        scales:{ y:{ beginAtZero:true } }
+      }
+    });
+  }
+}
+
+function fmtDDMM(iso){
+  // iso: YYYY-MM-DD
+  if(!iso || String(iso).length < 10) return String(iso||"");
+  const s = String(iso).substring(0,10);
+  const y = s.substring(0,4), m = s.substring(5,7), d = s.substring(8,10);
+  return `${d}/${m}`;
+}
+
+function renderParos(){
+  const items = Array.isArray(state.paros) ? state.paros.slice() : [];
+  // Agrupar por fecha (sum pares)
+  const map = {};
+  items.forEach(p=>{
+    const f = String(p.fecha||"").substring(0,10);
+    const pares = +p.pares || 0;
+    if(!f) return;
+    map[f] = (map[f]||0) + pares;
+  });
+
+  const fechas = Object.keys(map).sort();
+  const serie = fechas.map(f=> map[f]);
+  const acumulado = serie.reduce((a,b)=>a+b,0);
+
+  // peor/mejor
+  let peor = null, mejor = null;
+  if(fechas.length){
+    peor = fechas.reduce((best,f)=> map[f] > map[best] ? f : best, fechas[0]);
+    mejor = fechas.reduce((best,f)=> map[f] < map[best] ? f : best, fechas[0]);
+  }
+
+  const mismoDia = (peor && mejor && peor === mejor);
+
+  const peorLabel = peor ? fmtDDMM(peor) : "-";
+  const peorSub = peor ? `${map[peor]} pares perdidos` : "";
+  const mejorLabel = !mejor ? "-" : (mismoDia ? "No hubo" : fmtDDMM(mejor));
+  const mejorSub = !mejor ? "" : (mismoDia ? "" : `${map[mejor]} pares afectados`);
+
+  let html = `
+    <div class="box-title">PAROS / DEMORAS</div>
+    <h3 style="margin:6px 0 8px;">Demoras/Paros de producción</h3>
+
+    <div class="kpis">
+      <div class="kpi red"><div class="n">${peorLabel}</div><div class="l">Peor día</div><div style="font-size:11px;opacity:.9;margin-top:4px">${peorSub}</div></div>
+      <div class="kpi green"><div class="n">${mejorLabel}</div><div class="l">Mejor día</div><div style="font-size:11px;opacity:.9;margin-top:4px">${mejorSub}</div></div>
+      <div class="kpi orange"><div class="n">${acumulado}</div><div class="l">Acumulado semanal</div><div style="font-size:11px;opacity:.9;margin-top:4px">pares perdidos</div></div>
+      <div class="kpi blue"><div class="n">${items.length}</div><div class="l">Eventos</div></div>
+    </div>
+
+    <table>
+      <tr>
+        <th style="width:120px">Fecha</th>
+        <th style="width:120px">Pares Afectados</th>
+        <th>Motivo</th>
+        <th>Origen</th>
+        <th style="width:160px">Depto Afectado</th>
+      </tr>
+      ${items.map(p=>`
+        <tr>
+          <td>${fmtDDMM(p.fecha)}</td>
+          <td>${(+p.pares||0)}</td>
+          <td>${Shared.escapeHtml(p.motivo||"")}</td>
+          <td>${Shared.escapeHtml(p.origen||"")}</td>
+          <td>${Shared.DEPTOS[p.deptoId] ? Shared.DEPTOS[p.deptoId] : ("Depto "+(p.deptoId||""))}</td>
+        </tr>
+      `).join("")}
+    </table>
+
+    <div style="height:14px"></div>
+    <div style="border:1px solid #dfe6ea; padding:10px; border-radius:10px;">
+      <canvas id="parosChart" height="150"></canvas>
+    </div>
+  `;
+
+  return html;
+}
+
+function buildParosChart(){
+  if(!window.Chart) return;
+
+  const items = Array.isArray(state.paros) ? state.paros.slice() : [];
+  const map = {};
+  items.forEach(p=>{
+    const f = String(p.fecha||"").substring(0,10);
+    const pares = +p.pares || 0;
+    if(!f) return;
+    map[f] = (map[f]||0) + pares;
+  });
+
+  const fechas = Object.keys(map).sort();
+  const labels = fechas.map(f=>fmtDDMM(f));
+  const data = fechas.map(f=>map[f]);
+
+  const c = document.getElementById("parosChart");
+  if(!c) return;
+
+  new Chart(c, {
+    type:"bar",
+    data:{
+      labels,
+      datasets:[{
+        label:"Pares perdidos",
+        data,
+        backgroundColor:"#ef4444"
+      }]
+    },
+    options:{
+      responsive:true,
+      plugins:{ legend:{ position:"bottom" }},
+      scales:{ y:{ beginAtZero:true } }
+    }
+  });
+}
+
+function renderMantenimiento(){
+  const deptos = Shared.DEPTOS;
+  const ids = Shared.DEPTOS_IDS;
+
+  const inc = state.mantto?.incidencias || [];
+
+  const total = inc.length;
+  const abiertas = inc.filter(x =>
+    !String(x.status||"").toLowerCase().includes("cerr")
+  ).length;
+  const cerradas = total - abiertas;
+
+  return `
+    <div class="box-title">MANTENIMIENTO</div>
+    <h3 style="margin:6px 0 8px;">Incidencias de mantenimiento</h3>
+
+    <div class="kpis">
+      <div class="kpi blue"><div class="n">${total}</div><div class="l">Incidencias</div></div>
+      <div class="kpi red"><div class="n">${abiertas}</div><div class="l">Abiertas</div></div>
+      <div class="kpi green"><div class="n">${cerradas}</div><div class="l">Cerradas</div></div>
+    </div>
+
+    <table>
+      <tr>
+        <th style="width:110px">Fecha</th>
+        <th style="width:140px">Máquina</th>
+        <th style="width:160px">Departamento</th>
+        <th>Solicitud</th>
+        <th style="width:120px">Status</th>
+      </tr>
+
+      ${inc.map(x=>`
+        <tr>
+          <td>${fmtDDMM(x.fecha)}</td>
+          <td>${Shared.escapeHtml(x.maquina||"")}</td>
+          <td>${deptos[x.deptoId] || ("Depto "+x.deptoId)}</td>
+          <td>${Shared.escapeHtml(x.solicitud||"")}</td>
+          <td>${Shared.escapeHtml(x.status||"")}</td>
+        </tr>
+      `).join("")}
+    </table>
+
+    <div style="height:14px"></div>
+
+    <h3 style="margin:6px 0 8px;">Mantenimiento Autónomo (%)</h3>
+
+    <table>
+      <tr>
+        <th style="text-align:left">Departamento</th>
+        <th style="width:160px">Porcentaje</th>
+      </tr>
+
+      ${ids.map(id=>`
+        <tr>
+          <td style="text-align:left"><b>${deptos[id]}</b></td>
+          <td>${(+state.mantto.autonomoPorc[id] || 0)}%</td>
+        </tr>
+      `).join("")}
+    </table>
+
+    <div style="height:14px"></div>
+    <div style="border:1px solid #dfe6ea; padding:10px; border-radius:10px;">
+      <canvas id="manttoChart" height="150"></canvas>
+    </div>
+  `;
+}
+
+function buildMantenimientoChart(){
+  if(!window.Chart) return;
+
+  const ids = Shared.DEPTOS_IDS;
+  const labels = ids.map(id => Shared.DEPTOS[id]);
+  const data = ids.map(id => +state.mantto.autonomoPorc[id] || 0);
+
+  const c = document.getElementById("manttoChart");
+  if(!c) return;
+
+  new Chart(c, {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [{
+        label: "Mantenimiento Autónomo (%)",
+        data,
+        backgroundColor: "#0f766e"
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { position: "bottom" }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          max: 100,
+          ticks: { callback: v => v + "%" }
+        }
+      }
+    }
+  });
+}
+
+function renderAvisos(){
+  const avisos = Array.isArray(state.avisos) ? state.avisos : [];
+
+  return `
+    <div class="box-title">AVISOS</div>
+    <h3 style="margin:6px 0 8px;">Avisos generales</h3>
+
+    ${avisos.length ? `
+      <ul style="margin:0;padding-left:18px;">
+        ${avisos.map(a=>`
+          <li style="margin-bottom:6px;font-size:13px;">
+            ${Shared.escapeHtml(a)}
+          </li>
+        `).join("")}
+      </ul>
+    ` : `
+      <div style="font-size:12px;color:#607d8b;">
+        No hay avisos registrados.
+      </div>
+    `}
+  `;
+}
+
+function renderAcuerdos(){
+  const acuerdos = Array.isArray(state.acuerdos) ? state.acuerdos : [];
+
+  const pendientes = acuerdos.filter(x => !x.realizada);
+  const realizados = acuerdos.filter(x => x.realizada);
+
+  return `
+    <div class="box-title">ACUERDOS</div>
+    <h3 style="margin:6px 0 8px;">Acuerdos en seguimiento</h3>
+
+    <h4 style="margin:10px 0 6px;">Pendientes</h4>
+    ${pendientes.length ? `
+      <table>
+        <tr>
+          <th style="text-align:left">Acuerdo</th>
+          <th style="width:200px">Responsable</th>
+          <th style="width:140px">Fecha compromiso</th>
+        </tr>
+        ${pendientes.map(a=>`
+          <tr>
+            <td style="text-align:left">${Shared.escapeHtml(a.acuerdo)}</td>
+            <td>${Shared.escapeHtml(a.responsable)}</td>
+            <td>${fmtDDMM(a.fecha)}</td>
+          </tr>
+        `).join("")}
+      </table>
+    ` : `
+      <div style="font-size:12px;color:#607d8b;">
+        No hay acuerdos pendientes.
+      </div>
+    `}
+
+    <h4 style="margin:14px 0 6px;">Realizados</h4>
+    ${realizados.length ? `
+      <table>
+        <tr>
+          <th style="text-align:left">Acuerdo</th>
+          <th style="width:200px">Responsable</th>
+          <th style="width:140px">Fecha compromiso</th>
+        </tr>
+        ${realizados.map(a=>`
+          <tr>
+            <td style="text-align:left">${Shared.escapeHtml(a.acuerdo)}</td>
+            <td>${Shared.escapeHtml(a.responsable)}</td>
+            <td>${fmtDDMM(a.fecha)}</td>
+          </tr>
+        `).join("")}
+      </table>
+    ` : `
+      <div style="font-size:12px;color:#607d8b;">
+        No hay acuerdos realizados.
+      </div>
+    `}
+  `;
+}
+
+  // Render
+  
+
+app.innerHTML =
+  renderHeader() +
+  renderProduccion() +
+  renderCalidad() +
+  renderDefectos() +
+  renderArranques() +
+  renderParos() +
+  renderMantenimiento() +
+  renderAvisos() +
+  renderAcuerdos() +
+  renderCruzSeguridad();
+
+  buildProdChart();
+  buildArranqueCharts();
+  buildParosChart();
+  buildMantenimientoChart();
+
+
+  // Auto print (si lo quieres automático, descomenta)
+  // window.onload = ()=> window.print();
+</script>
+</body>
+</html>
