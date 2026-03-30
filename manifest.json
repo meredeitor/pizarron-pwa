@@ -2,7 +2,7 @@
   "name": "Pizarrón Operativo",
   "short_name": "Pizarrón",
   "description": "PWA para captura y reporte del Pizarrón Operativo (Producción, Calidad, Seguridad, Mantenimiento).",
-  "start_url": "indice.html",
+  "start_url": "./indice.html",
   "scope": "./",
   "display": "standalone",
   "background_color": "#0b1220",
