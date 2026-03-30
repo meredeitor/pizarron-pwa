@@ -2,7 +2,7 @@ const CACHE_NAME = "pizarron-pwa-v2";
 
 const APP_SHELL = [
   "./",
-  "./indice.html",
+  "./index.html",
   "./reporte.html",
   "./shared.js",
   "./manifest.json"
